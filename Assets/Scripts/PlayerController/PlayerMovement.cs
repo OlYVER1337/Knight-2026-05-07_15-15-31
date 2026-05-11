@@ -10,7 +10,6 @@ public class PlayerMovement : MonoBehaviour
     public Transform groundSensor;
     public float groundCheckRadius = 0.15f;
     public LayerMask groundLayer;
-    public Vector2 wallJumpForce = new Vector2(8f, 14f);
 
     [Header("Better Jump")]
     public float fallMultiplier = 5f;
@@ -22,26 +21,23 @@ public class PlayerMovement : MonoBehaviour
     public float wallCheckDistance = 0.2f;
     public float wallSlideSpeed = 1.5f;
 
+    [Header("Wall Jump")]
+    public Vector2 wallJumpForce = new Vector2(8f, 14f);
+
     [Header("Dash")]
-    public float dashSpeed = 10f;
+    public float dashSpeed = 20f;
     public float dashDuration = 0.15f;
     public float dashCooldown = 1f;
 
-    public Transform attackPoint;
-
-    // ── Private State ────────────────────────────────────
-    private Rigidbody2D rb;
-    private SpriteRenderer sr;
-    private Animator anim;
-
-    private float moveInput;
-    private bool facingRight = true;
-
     public bool isGrounded;
+    private Rigidbody2D rb;
+    private float moveInput;
+    private SpriteRenderer sr;
+    private Animator anim;                 // ← thêm
+    private bool facingRight = true;
     private bool isWallSliding;
     private bool isTouchingWall;
     private bool isWallJumping;
-
     private bool isDashing;
     private float dashTimeLeft;
     private float dashCooldownTimer;
@@ -54,12 +50,11 @@ public class PlayerMovement : MonoBehaviour
     private static readonly int AnimRoll      = Animator.StringToHash("Roll");
     private static readonly int AnimState     = Animator.StringToHash("AnimState");
 
-    // ────────────────────────────────────────────────────
     void Start()
     {
         rb   = GetComponent<Rigidbody2D>();
         sr   = GetComponentInChildren<SpriteRenderer>();
-        anim = GetComponentInChildren<Animator>();
+        anim = GetComponentInChildren<Animator>();  // ← thêm
     }
 
     void Update()
@@ -74,24 +69,40 @@ public class PlayerMovement : MonoBehaviour
         HandleJump();
         HandleFlip();
         HandleWallSlide();
-        UpdateAnimations();
+        UpdateAnimations();                // ← thêm
     }
 
     void FixedUpdate()
     {
         HandleDash();
+
         if (isDashing) return;
+
         Move();
         BetterJump();
     }
 
-    // ── 1. DI CHUYỂN ─────────────────────────────────────
+    // ── Animation ────────────────────────────────────────
+    void UpdateAnimations()
+    {
+        // Idle / Run
+        anim.SetInteger(AnimState, moveInput != 0 && isGrounded ? 1 : 0);
+
+        // Grounded
+        anim.SetBool(AnimGrounded, isGrounded);
+
+        // Wall Slide
+        anim.SetBool(AnimWallSlide, isWallSliding);
+
+        // AirSpeedY để phân biệt Jump / Fall
+        anim.SetFloat(AnimAirSpeedY, rb.linearVelocity.y);
+    }
+
     void Move()
     {
         rb.linearVelocity = new Vector2(moveInput * moveSpeed, rb.linearVelocity.y);
     }
 
-    // ── 2. KIỂM TRA MÔI TRƯỜNG ──────────────────────────
     void CheckGround()
     {
         isGrounded = Physics2D.OverlapCircle(
@@ -120,7 +131,16 @@ public class PlayerMovement : MonoBehaviour
                       || (!facingRight && touchLeft);
     }
 
-    // ── 3. NHẢY ──────────────────────────────────────────
+    void HandleInput()
+    {
+        if (Input.GetKeyDown(KeyCode.LeftShift)
+            && dashCooldownTimer <= 0
+            && !isDashing)
+        {
+            StartDash();
+        }
+    }
+
     void HandleJump()
     {
         if (Input.GetButtonDown("Jump"))
@@ -128,7 +148,7 @@ public class PlayerMovement : MonoBehaviour
             if (isGrounded)
             {
                 rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce);
-                anim.SetTrigger(AnimJump);
+                anim.SetTrigger(AnimJump);     // ← thêm
             }
             else if (isWallSliding)
             {
@@ -140,8 +160,11 @@ public class PlayerMovement : MonoBehaviour
     void WallJump()
     {
         float direction = facingRight ? -1f : 1f;
-        rb.linearVelocity = new Vector2(wallJumpForce.x * direction, wallJumpForce.y);
-        anim.SetTrigger(AnimJump);
+        rb.linearVelocity = new Vector2(
+            wallJumpForce.x * direction,
+            wallJumpForce.y
+        );
+        anim.SetTrigger(AnimJump);             // ← thêm
         Flip();
         isWallJumping = true;
         Invoke(nameof(StopWallJumping), 0.2f);
@@ -152,7 +175,6 @@ public class PlayerMovement : MonoBehaviour
         isWallJumping = false;
     }
 
-    // ── 4. BETTER JUMP ───────────────────────────────────
     void BetterJump()
     {
         if (isWallSliding) return;
@@ -173,7 +195,19 @@ public class PlayerMovement : MonoBehaviour
         }
     }
 
-    // ── 5. WALL SLIDE ─────────────────────────────────────
+    void HandleFlip()
+    {
+        if (isWallJumping) return;
+        if (moveInput > 0 && !facingRight) Flip();
+        else if (moveInput < 0 && facingRight) Flip();
+    }
+
+    void Flip()
+    {
+        facingRight = !facingRight;
+        sr.flipX    = !sr.flipX;
+    }
+
     void HandleWallSlide()
     {
         isWallSliding = isTouchingWall
@@ -190,42 +224,13 @@ public class PlayerMovement : MonoBehaviour
         }
     }
 
-    // ── 6. FLIP ───────────────────────────────────────────
-    void HandleFlip()
-    {
-        if (isWallJumping) return;
-        if (moveInput > 0 && !facingRight) Flip();
-        else if (moveInput < 0 && facingRight) Flip();
-    }
-
-    void Flip()
-    {
-        facingRight = !facingRight;
-
-        // Flip toàn bộ object kể cả collider
-        Vector3 scale = transform.localScale;
-        scale.x *= -1;
-        transform.localScale = scale;
-    }
-
-    // ── 7. DASH ───────────────────────────────────────────
-    void HandleInput()
-    {
-        if (Input.GetKeyDown(KeyCode.LeftShift)
-            && dashCooldownTimer <= 0
-            && !isDashing)
-        {
-            StartDash();
-        }
-    }
-
     void StartDash()
     {
         isDashing         = true;
         dashTimeLeft      = dashDuration;
         dashCooldownTimer = dashCooldown;
         rb.gravityScale   = 0;
-        anim.SetTrigger(AnimRoll);
+        anim.SetTrigger(AnimRoll);             // ← thêm
     }
 
     void HandleDash()
@@ -255,16 +260,6 @@ public class PlayerMovement : MonoBehaviour
         rb.linearVelocity = new Vector2(moveInput * moveSpeed, rb.linearVelocity.y);
     }
 
-    // ── 8. ANIMATION ──────────────────────────────────────
-    void UpdateAnimations()
-    {
-        anim.SetBool(AnimGrounded,   isGrounded);
-        anim.SetBool(AnimWallSlide,  isWallSliding);
-        anim.SetFloat(AnimAirSpeedY, rb.linearVelocity.y);
-        anim.SetInteger(AnimState,   moveInput != 0 && isGrounded ? 1 : 0);
-    }
-
-    // ── DEBUG ─────────────────────────────────────────────
     void OnDrawGizmosSelected()
     {
         if (groundSensor != null)
@@ -285,4 +280,9 @@ public class PlayerMovement : MonoBehaviour
                 wallSensorLeft.position + Vector3.left * wallCheckDistance);
         }
     }
+    public void AE_SlideDust()
+{
+    // Để trống — chỉ cần có function này để Unity không báo lỗi
+    // Sau này có thể thêm particle effect bụi ở đây
+}
 }

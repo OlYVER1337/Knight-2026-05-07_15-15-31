@@ -1,101 +1,118 @@
-using System.Data;
-using System.Diagnostics;
-using UnityEditor.Experimental.GraphView;
 using UnityEngine;
-using UnityEngine.Timeline;
-
 
 public class EnemyAI : EnemyBase
 {
-   private Vector2 patrolOrigin;
-   private float patrolTimer;
-   private float attackTimer;
-   private bool isWaiting;
+  
+    private Vector2 patrolOrigin;
+    private float patrolTimer;
+    private float attackTimer;
+    private bool isWaiting;
 
     protected override void Start()
     {
         base.Start();
         patrolOrigin = transform.position;
-
-
     }
+
     void Update()
     {
-        if(isDead) return;
+        if (isDead) return;
+
         UpdateState();
 
         switch (currentState)
         {
-            case EnemyState.Patrol:HandlePatrol(); break;
-            case EnemyState.Chase:HandleChase(); break;
-            case EnemyState.Attack:HandleAttack(); break;
+            case EnemyState.Patrol: HandlePatrol(); break;
+            case EnemyState.Chase:  HandleChase();  break;
+            case EnemyState.Attack: HandleAttack(); break;
         }
-        if(attackTimer > 0)
-        {
+
+        if (attackTimer > 0)
             attackTimer -= Time.deltaTime;
-        }
     }
+
+    // ── Cập nhật State ───────────────────────────────────
     void UpdateState()
     {
-    float dist = DistanceToPlayer();
+        float dist = DistanceToPlayer();
 
-    if(dist <= attackRange)
-        {
+        if (dist <= attackRange)
             currentState = EnemyState.Attack;
-        }else if (dist <= detectionrage)
-        {
+        else if (dist <= detectionRange)
             currentState = EnemyState.Chase;
-        }
         else
-        {
             currentState = EnemyState.Patrol;
-        }
     }
+
+    // ── Tuần tra ─────────────────────────────────────────
     void HandlePatrol()
+{
+    if (isWaiting)
     {
-        if(anim!= null)
-        {
-            anim.SetBool("Walk",true);
-        }
-        if (isWaiting)
-        {
-            rb.linearVelocity =Vector2.zero;
-            patrolTimer -= Time.deltaTime;
+        rb.linearVelocity = Vector2.zero;
+        if (anim != null)
+            anim.SetBool("Walk", false);
 
-            if (patrolTimer <= 0)
-            {
-                isWaiting = false;
-                return;
-            }
-            float dir = facingRight ? 1f :-1f;
-            float target = patrolOrigin.x + (facingRight ?patrolDistance : -patrolDistance);
+        patrolTimer -= Time.deltaTime;
+        if (patrolTimer <= 0)
+            isWaiting = false;
 
-
-            if((facingRight && transform.position.x >= target) || (!facingRight && transform.position.x <= target))
-            {
-                isWaiting =true;
-                patrolTimer = wailTime;
-                FlipToward(-dir);
-                rb.linearVelocity = Vector2.zero;
-                return;
-            }
-            rb.linearVelocity = new Vector2(dir*moveSpeed, rb.linearVelocity.y);
-        }
-        
+        return;
     }
 
+    if (anim != null)
+        anim.SetBool("Walk", true);
+
+    float dir    = facingRight ? 1f : -1f;
+    float target = patrolOrigin.x + (facingRight ? patrolDistance : -patrolDistance);
+
+    // ── Check tường phía trước ───────────────────────────
+    bool hitWall = Physics2D.Raycast(
+        transform.position,
+        Vector2.right * dir,
+        wallCheckDistance,
+        groundLayer
+    );
+
+    // ── Check vực phía trước ─────────────────────────────
+    Vector2 ledgeCheckPos = new Vector2(
+        transform.position.x + dir * wallCheckDistance,
+        transform.position.y
+    );
+    bool hasGround = Physics2D.Raycast(
+        ledgeCheckPos,
+        Vector2.down,
+        ledgeCheckDistance,
+        groundLayer
+    );
+
+    // ── Đến điểm cuối HOẶC gặp tường HOẶC gặp vực ──────
+    bool shouldTurn = (facingRight  && transform.position.x >= target)
+                   || (!facingRight && transform.position.x <= target)
+                   || hitWall
+                   || !hasGround;   // không có đất → vực
+
+    if (shouldTurn)
+    {
+        isWaiting   = true;
+        patrolTimer = waitTime;
+        FlipToward(-dir);
+        rb.linearVelocity = Vector2.zero;
+        return;
+    }
+
+    rb.linearVelocity = new Vector2(dir * moveSpeed, rb.linearVelocity.y);
+}
+
+    // ── Đuổi Player ──────────────────────────────────────
     void HandleChase()
     {
         if (anim != null)
-        {
-            anim.SetBool("Walk",true);
-        }
-        if(player == null)
-        {
-            return;
-        }
-        float dir = player.position.x -transform.position.x;
+            anim.SetBool("Walk", true);
 
+        if (player == null) return;
+
+        float dir = player.position.x - transform.position.x;
         FlipToward(dir);
 
         rb.linearVelocity = new Vector2(
@@ -104,39 +121,42 @@ public class EnemyAI : EnemyBase
         );
     }
 
+    // ── Tấn công ─────────────────────────────────────────
     void HandleAttack()
     {
         rb.linearVelocity = Vector2.zero;
 
-        if(player != null)
-        FlipToward(player.position.x - transform.position.x);
+        if (anim != null)
+            anim.SetBool("Walk", false);
 
-        if(anim !=null)
-        anim.SetBool("Walk",false);
+        if (player != null)
+            FlipToward(player.position.x - transform.position.x);
 
-        if(attackTimer <= 0)
+        if (attackTimer <= 0)
         {
             PerformAttack();
-            attackTimer = attackCoolDown;
+            attackTimer = attackCooldown;
         }
     }
+
     void PerformAttack()
     {
-        if(anim!= null)
-        {
-            anim.SetTrigger("Attach");
+        if (anim != null)
+            anim.SetTrigger("Attack");
 
-        }
-        if (player != null && Vector2.Distance(transform.position,player.position) <= attackRange)
+        if (player != null
+            && Vector2.Distance(transform.position, player.position) <= attackRange)
         {
-            // PlayerTakeDamage() ti viet
+            // player.GetComponent<PlayerHealth>()?.TakeDamage(attackDamage);
+            Debug.Log($"{gameObject.name} tấn công player!");
         }
     }
+
+    // ── Nhận damage ──────────────────────────────────────
     public override void TakeDamage(float damage)
     {
         base.TakeDamage(damage);
         if (!isDead)
-        currentState = EnemyState.Chase;
+            currentState = EnemyState.Chase;
     }
-
 }

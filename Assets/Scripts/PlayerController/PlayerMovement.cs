@@ -12,7 +12,7 @@ public class PlayerMovement : MonoBehaviour
     public LayerMask groundLayer;
 
     [Header("Better Jump")]
-    public float fallMultiplier = 5f;
+    public float fallMultiplier = 10f;
     public float lowJumpMultiplier = 2f;
 
     [Header("Wall Slide")]
